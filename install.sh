@@ -728,6 +728,10 @@ if [[ -f "$devcon_exe" ]]; then
     else
         mv "$devcon_exe" "$devcon_backup"
     fi
+elif [[ ! -f "$devcon_backup" ]] && [[ ! -f "$devcon_exe" ]]; then
+    # deepin-port: a copy-seeded prefix may legitimately ship no drivers/devcon.exe
+    # at all (nothing to suppress). Fail closed only when an unknown file exists.
+    printf 'No devcon.exe present; nothing to suppress.\n'
 elif [[ ! -f "$devcon_backup" ]] || \
      [[ "$(sha256sum "$devcon_backup" | awk '{print $1}')" != \
         "$devcon_sha256" ]]; then
