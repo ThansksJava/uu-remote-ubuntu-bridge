@@ -450,16 +450,17 @@ install_winehq() {
     if [[ -x "$wine_bin" ]]; then
         return
     fi
-    # shellcheck source=/dev/null
-    source /etc/os-release
-    codename="${VERSION_CODENAME:?Ubuntu codename is unavailable}"
+    # deepin-port: Deepin has no Ubuntu codename; use WineHQ's Debian bookworm
+    # line, which installs to the same /opt/wine-stable layout the bridge
+    # expects and matches the Deepin 25 glibc (2.38) baseline.
+    codename=bookworm
     temporary="$(mktemp -d)"
 
     sudo dpkg --add-architecture i386
     curl -fsSL https://dl.winehq.org/wine-builds/winehq.key \
         -o "$temporary/winehq.key"
     curl -fsSL \
-        "https://dl.winehq.org/wine-builds/ubuntu/dists/$codename/winehq-$codename.sources" \
+        "https://dl.winehq.org/wine-builds/debian/dists/$codename/winehq-$codename.sources" \
         -o "$temporary/winehq-$codename.sources"
     sudo install -d -m 0755 /etc/apt/keyrings
     sudo install -m 0644 "$temporary/winehq.key" \
@@ -473,14 +474,17 @@ install_winehq() {
 
 install_packages() {
     sudo apt-get update
+    # deepin-port: dropped gnome-remote-desktop, novnc and websockify; they are
+    # not in the Deepin 25 repositories and are only needed by the GNOME RDP
+    # relay and the noVNC diagnostic console (both unused on the VNC path).
     sudo apt-get install -y \
         acl aria2 binutils ca-certificates cmake crudini curl freerdp3-x11 \
         gcc \
         gcc-mingw-w64-x86-64 \
-        git gnome-remote-desktop iproute2 jq libsecret-tools libx11-6 \
-        libxml2-utils libxtst6 meson novnc \
+        git iproute2 jq libsecret-tools libx11-6 \
+        libxml2-utils libxtst6 meson \
         ninja-build openbox openssl p7zip-full patch python3 python3-attr \
-        python3-gi python3-jinja2 tar tigervnc-viewer websockify \
+        python3-gi python3-jinja2 tar tigervnc-viewer \
         x11-utils x11vnc xauth xclip \
         xdotool xvfb zstd
     install_winehq
@@ -496,13 +500,14 @@ fi
 
 for command in curl meson ninja patch readelf sha256sum /usr/bin/systemctl \
     timeout \
-    "$grdctl_bin" "$openssl_bin" "$python_bin" "$secret_tool_bin" \
+    "$openssl_bin" "$python_bin" "$secret_tool_bin" \
     "$wine_bin" "$wineserver_bin" /usr/bin/Xvfb /usr/bin/gsettings \
     /usr/bin/awk /usr/bin/ip /usr/bin/mcookie /usr/bin/openbox \
     /usr/bin/script /usr/bin/sort /usr/bin/ss /usr/bin/xauth \
-    /usr/bin/vncviewer /usr/bin/websockify /usr/bin/x11vnc /usr/bin/xclip \
-    /usr/bin/xdotool \
-    /usr/libexec/gnome-remote-desktop-daemon; do
+    /usr/bin/vncviewer /usr/bin/x11vnc /usr/bin/xclip \
+    /usr/bin/xdotool; do
+    # deepin-port: removed grdctl, websockify and the GNOME remote-desktop
+    # daemon requirement — the VNC relay path does not use any of them.
     if ! command -v "$command" >/dev/null 2>&1; then
         printf 'missing required command: %s\n' "$command" >&2
         exit 1
@@ -857,8 +862,9 @@ if [[ ! -s "$tls_cert" || ! -s "$tls_key" ]]; then
     chmod 0600 "$tls_key"
 fi
 
-rdp_password="$("$secret_tool_bin" lookup service uu-desktop-bridge \
-    username "$bridge_user" || true)"
+# deepin-port: no GNOME keyring guarantee on Deepin/DDE — skip the keyring
+# lookup and only prompt for the shared relay password.
+rdp_password=''
 if [[ -z "$rdp_password" ]]; then
     while true; do
         read -rsp 'Password for the local GNOME RDP relay: ' rdp_password
@@ -873,16 +879,20 @@ if [[ -z "$rdp_password" ]]; then
     done
 fi
 
-"$grdctl_bin" rdp set-port "$rdp_port"
-"$grdctl_bin" rdp set-tls-cert "$tls_cert"
-"$grdctl_bin" rdp set-tls-key "$tls_key"
-"$grdctl_bin" rdp set-credentials "$bridge_user" "$rdp_password"
-"$grdctl_bin" rdp disable-view-only
-"$grdctl_bin" rdp disable-port-negotiation
-"$grdctl_bin" rdp enable
-printf '%s' "$rdp_password" | "$secret_tool_bin" store \
-    --label='UU Remote Ubuntu bridge RDP credential' \
-    service uu-desktop-bridge username "$bridge_user"
+# deepin-port: grdctl and the keyring credential only exist on the RDP relay
+# path; the VNC relay derives its loopback password from the same value below.
+if [[ "$desktop_relay" == rdp ]]; then
+    "$grdctl_bin" rdp set-port "$rdp_port"
+    "$grdctl_bin" rdp set-tls-cert "$tls_cert"
+    "$grdctl_bin" rdp set-tls-key "$tls_key"
+    "$grdctl_bin" rdp set-credentials "$bridge_user" "$rdp_password"
+    "$grdctl_bin" rdp disable-view-only
+    "$grdctl_bin" rdp disable-port-negotiation
+    "$grdctl_bin" rdp enable
+    printf '%s' "$rdp_password" | "$secret_tool_bin" store \
+        --label='UU Remote Ubuntu bridge RDP credential' \
+        service uu-desktop-bridge username "$bridge_user"
+fi
 relay_vnc_auth_file="$config_dir/relay-vnc.pass"
 relay_vnc_auth_temporary="$(mktemp "$config_dir/relay-vnc.pass.XXXXXX")"
 relay_vnc_password="$(LC_ALL=C printf '%.8s' "$rdp_password")"

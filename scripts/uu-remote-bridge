@@ -721,7 +721,13 @@ discover_desktop_session() {
                 "$candidate_session_service" "$candidate_session_seat"
             return 0
         fi
-    done < <(/usr/bin/pgrep -u "$UID" -x gnome-shell | /usr/bin/sort -nr)
+    # deepin-port: Deepin's DDE desktop shell is dde-shell/dde-desktop instead
+    # of gnome-shell; include all three so desktop discovery works there.
+    done < <({
+        /usr/bin/pgrep -u "$UID" -x gnome-shell || true
+        /usr/bin/pgrep -u "$UID" -x dde-shell || true
+        /usr/bin/pgrep -u "$UID" -x dde-desktop || true
+    } | /usr/bin/sort -nru)
 
     if [[ -n "$fallback_bus" ]]; then
         select_desktop_candidate \

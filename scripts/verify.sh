@@ -254,7 +254,12 @@ gnome_session_for_bus() {
         printf '%s|%s|%s|%s\n' "$candidate_session_id" \
             "$candidate_service" "$candidate_seat" "$candidate_display"
         return 0
-    done < <(/usr/bin/pgrep -u "$UID" -x gnome-shell | /usr/bin/sort -nr)
+    # deepin-port: include DDE shell processes alongside gnome-shell.
+    done < <({
+        /usr/bin/pgrep -u "$UID" -x gnome-shell || true
+        /usr/bin/pgrep -u "$UID" -x dde-shell || true
+        /usr/bin/pgrep -u "$UID" -x dde-desktop || true
+    } | /usr/bin/sort -nru)
     return 1
 }
 

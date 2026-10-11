@@ -19,7 +19,14 @@ if [[ ! -r /etc/os-release ]]; then
 fi
 # shellcheck source=/dev/null
 source /etc/os-release
-if [[ "${ID:-}" != ubuntu || "${VERSION_ID:-}" != 24.04 ]]; then
+# deepin-port: Deepin 25 (Debian-bookworm-based, X11 DDE) experimental allowance.
+# The upstream project only supports Ubuntu 24.04; this local branch relaxes the
+# gate for the VNC-relay path on Deepin 25 x86_64. Not vendor-validated.
+if [[ "${ID:-}" == deepin && "${VERSION_ID:-}" == 25 ]]; then
+    printf '%s\n' \
+        'EXPERIMENTAL: Deepin 25 host allowed by the local deepin-port branch.' \
+        'Upstream only validates Ubuntu 24.04 + GNOME 46; results are not guaranteed.'
+elif [[ "${ID:-}" != ubuntu || "${VERSION_ID:-}" != 24.04 ]]; then
     printf 'Only Ubuntu 24.04 is currently supported; detected %s %s.\n' \
         "${ID:-unknown}" "${VERSION_ID:-unknown}" >&2
     exit 1
