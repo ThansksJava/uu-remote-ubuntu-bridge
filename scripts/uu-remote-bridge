@@ -1456,36 +1456,15 @@ if [[ "$desktop_relay" == rdp ]]; then
     )"
 else
     desktop_vnc_display=$((desktop_vnc_port - 5900))
+    # deepin-port: Deepin ships TigerVNC 1.15, which rejects the RealVNC
+    # parameter set upstream relies on. Pass only the supported subset.
     /usr/bin/env \
         DBUS_SESSION_BUS_ADDRESS=unix:path=/dev/null \
         /usr/bin/vncviewer \
-        -AllowMainClose=1 \
-        -LogToAddressBook=0 \
         -FullScreen=1 \
-        -FullScreenHint=1 \
-        -EnableToolbar=0 \
-        -AcceptBell=0 \
-        -AudioVolume=0 \
-        -WarnUnencrypted=0 \
-        -VerifyId=0 \
         -Shared=1 \
-        -Scaling=Fit \
-        -DynamicResolution=0 \
-        -GrabKeyboard="$vnc_grab_keyboard_value" \
-        -SendKeyEvents=1 \
-        -SendPointerEvents=1 \
-        -ClientCutText="$vnc_client_cut_text" \
-        -ServerCutText=0 \
         -SendPrimary=0 \
-        -SendInitialClipboard=0 \
-        -ServerClipboardGraceTime=5000 \
-        -MenuKey= \
-        -UpdateScreenshot=0 \
-        -ShowSplash=0 \
-        -EnableAnalytics=0 \
-        -ShareFiles=0 \
-        -EnableRemotePrinting=0 \
-        -ChangeServerDefaultPrinter=0 \
+        -MenuKey=f8 \
         "127.0.0.1:$desktop_vnc_display" \
         >>"$state_dir/vncviewer-relay.log" 2>&1 &
     vncviewer_pid=$!
@@ -1495,7 +1474,7 @@ else
             {
                 /usr/bin/xdotool search --onlyvisible \
                     --pid "$vncviewer_pid" \
-                    --name '^127\.0\.0\.1:.* - RealVNC Viewer$' \
+                    --name '^TigerVNC viewer$' \
                     2>/dev/null || true
             } | /usr/bin/tail -n 1
         )"
@@ -1596,7 +1575,7 @@ supervise_server() {
                     {
                         /usr/bin/xdotool search --onlyvisible \
                             --pid "$vncviewer_pid" \
-                            --name '^127\.0\.0\.1:.* - RealVNC Viewer$' \
+                            --name '^TigerVNC viewer$' \
                             2>/dev/null || true
                     } | /usr/bin/tail -n 1
                 )"
