@@ -216,6 +216,7 @@ log() {
 }
 
 desktop_geometry() {
+    local geometry
     local height
     local selected_xauthority
     local width
@@ -226,12 +227,27 @@ desktop_geometry() {
     if [[ -z "$selected_xauthority" && -f "$HOME/.Xauthority" ]]; then
         selected_xauthority="$HOME/.Xauthority"
     fi
-    read -r width height < <(
-        /usr/bin/env \
-            DISPLAY="$desktop_display" \
-            XAUTHORITY="$selected_xauthority" \
-            /usr/bin/xdotool getdisplaygeometry 2>/dev/null
-    ) || return 1
+    # The relay mirrors the whole root window, so on a multi-monitor desktop
+    # the canvas has to match the combined geometry of every monitor.
+    # xdotool getdisplaygeometry only reports the primary Xinerama screen,
+    # which silently clips all other monitors, so query the root window from
+    # the X server and keep xdotool as a fallback for unusual setups.
+    geometry="$(/usr/bin/env \
+        DISPLAY="$desktop_display" \
+        XAUTHORITY="$selected_xauthority" \
+        /usr/bin/xdpyinfo 2>/dev/null |
+        /usr/bin/awk '/dimensions:/{print $2; exit}')"
+    if [[ "$geometry" =~ ^[0-9]+x[0-9]+$ ]]; then
+        width="${geometry%x*}"
+        height="${geometry#*x}"
+    else
+        read -r width height < <(
+            /usr/bin/env \
+                DISPLAY="$desktop_display" \
+                XAUTHORITY="$selected_xauthority" \
+                /usr/bin/xdotool getdisplaygeometry 2>/dev/null
+        ) || return 1
+    fi
     [[ "$width" =~ ^[0-9]+$ && "$height" =~ ^[0-9]+$ ]] || return 1
     # Ignore transient tiny RDP windows. They are useful client-side sizes,
     # but not stable canvases for an unattended shared workstation.
