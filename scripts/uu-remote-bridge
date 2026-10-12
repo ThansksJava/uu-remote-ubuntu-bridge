@@ -1474,7 +1474,7 @@ else
             {
                 /usr/bin/xdotool search --onlyvisible \
                     --pid "$vncviewer_pid" \
-                    --name '^TigerVNC viewer$' \
+                    --name 'TigerVNC' \
                     2>/dev/null || true
             } | /usr/bin/tail -n 1
         )"
@@ -1575,7 +1575,7 @@ supervise_server() {
                     {
                         /usr/bin/xdotool search --onlyvisible \
                             --pid "$vncviewer_pid" \
-                            --name '^TigerVNC viewer$' \
+                            --name 'TigerVNC' \
                             2>/dev/null || true
                     } | /usr/bin/tail -n 1
                 )"
@@ -1586,11 +1586,21 @@ supervise_server() {
             active_window_id="$(
                 /usr/bin/xdotool getactivewindow 2>/dev/null || true
             )"
-            if [[ ! -e "$console_focus_file" && \
-                  -n "$active_window_id" && \
-                  "$active_window_id" != "$relay_window_id" ]]; then
-                /usr/bin/xdotool windowactivate "$relay_window_id" \
+            # deepin-port: TigerVNC is not an Openbox focus target, so
+            # getactivewindow can legitimately return empty here. The old
+            # guard required a non-empty active window and therefore never
+            # restacked the relay, which let UU's layered management window
+            # (GameViewer.exe, mapped later) sit on top of the captured
+            # desktop on the private display. Raise the relay unconditionally
+            # so only the live desktop is ever visible to a controller.
+            if [[ ! -e "$console_focus_file" ]]; then
+                /usr/bin/xdotool windowraise "$relay_window_id" \
                     >/dev/null 2>&1 || true
+                if [[ -n "$active_window_id" && \
+                      "$active_window_id" != "$relay_window_id" ]]; then
+                    /usr/bin/xdotool windowactivate "$relay_window_id" \
+                        >/dev/null 2>&1 || true
+                fi
             fi
         fi
         health_checks=$((health_checks + 1))

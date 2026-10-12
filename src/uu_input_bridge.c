@@ -214,6 +214,32 @@ static BOOL contains_input_type(UINT count, const INPUT *inputs, int size,
     return FALSE;
 }
 
+/* The Deepin/VNC port captures a native TigerVNC viewer window that Wine
+ * cannot deliver mouse buttons to: the X11 driver reports success for button
+ * events it never forwards to a non-Wine window, so a controller can move the
+ * pointer but never click. Send mouse events through the broker by default so
+ * uu-x11-input injects them straight onto the live desktop; the Wine queue
+ * path is only used when the bridge explicitly opts in with
+ * UURB_INPUT_ROUTE=direct. */
+static BOOL mouse_uses_broker(void)
+{
+    static volatile LONG cached_state = -1;
+    wchar_t value[16];
+    LONG state;
+
+    state = InterlockedCompareExchange(&cached_state, 0, -1);
+    if (state >= 0)
+        return (BOOL)state;
+
+    state = 1;
+    if (GetEnvironmentVariableW(L"UURB_INPUT_ROUTE", value,
+                               (DWORD)(sizeof(value) / sizeof(value[0]))) > 0 &&
+        lstrcmpiW(value, L"direct") == 0)
+        state = 0;
+    InterlockedExchange(&cached_state, state);
+    return (BOOL)state;
+}
+
 static UINT WINAPI bridged_send_input(UINT count, LPINPUT inputs, int size)
 {
     char line[512];
@@ -255,7 +281,7 @@ static UINT WINAPI bridged_send_input(UINT count, LPINPUT inputs, int size)
                                             INPUT_KEYBOARD);
     mouse_input = !unicode_keyboard && !physical_keyboard &&
                   contains_input_type(count, inputs, size, INPUT_MOUSE);
-    if (unicode_keyboard) {
+    if (unicode_keyboard || (mouse_input && mouse_uses_broker())) {
         broker_started_ms = GetTickCount64();
         result = send_through_broker(count, inputs, size, &error);
         broker_ms = (DWORD)(GetTickCount64() - broker_started_ms);
