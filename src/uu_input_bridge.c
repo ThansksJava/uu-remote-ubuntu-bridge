@@ -240,6 +240,32 @@ static BOOL mouse_uses_broker(void)
     return (BOOL)state;
 }
 
+/* Same rationale as the mouse path above: physical key events handed to the
+ * Wine input queue are only ever delivered to Wine's own windows. When the
+ * relay is a native (Linux) viewer such as TigerVNC, a controller's keystrokes
+ * are accepted by Wine (result == count, no error) yet never reach the live
+ * desktop, so text fields stay unreachable. Default the physical keyboard to
+ * the broker route as well; UURB_KEYBOARD_ROUTE=direct restores the Wine
+ * queue path. */
+static BOOL keyboard_uses_broker(void)
+{
+    static volatile LONG cached_state = -1;
+    wchar_t value[16];
+    LONG state;
+
+    state = InterlockedCompareExchange(&cached_state, 0, -1);
+    if (state >= 0)
+        return (BOOL)state;
+
+    state = 1;
+    if (GetEnvironmentVariableW(L"UURB_KEYBOARD_ROUTE", value,
+                               (DWORD)(sizeof(value) / sizeof(value[0]))) > 0 &&
+        lstrcmpiW(value, L"direct") == 0)
+        state = 0;
+    InterlockedExchange(&cached_state, state);
+    return (BOOL)state;
+}
+
 static UINT WINAPI bridged_send_input(UINT count, LPINPUT inputs, int size)
 {
     char line[512];
@@ -281,7 +307,9 @@ static UINT WINAPI bridged_send_input(UINT count, LPINPUT inputs, int size)
                                             INPUT_KEYBOARD);
     mouse_input = !unicode_keyboard && !physical_keyboard &&
                   contains_input_type(count, inputs, size, INPUT_MOUSE);
-    if (unicode_keyboard || (mouse_input && mouse_uses_broker())) {
+    if (unicode_keyboard ||
+        (physical_keyboard && keyboard_uses_broker()) ||
+        (mouse_input && mouse_uses_broker())) {
         broker_started_ms = GetTickCount64();
         result = send_through_broker(count, inputs, size, &error);
         broker_ms = (DWORD)(GetTickCount64() - broker_started_ms);
