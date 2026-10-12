@@ -267,7 +267,13 @@ static UINT WINAPI bridged_send_input(UINT count, LPINPUT inputs, int size)
         result = original_send_input(count, inputs, size);
         error = GetLastError();
         direct_ms = (DWORD)(GetTickCount64() - direct_started_ms);
-        if (result != count) {
+        /* Wine can return the full count while still failing the injection:
+         * once the Wine foreground handle goes stale (for example after the
+         * GameViewer login window closes), SendInput reports result == count
+         * with last error ERROR_INVALID_WINDOW_HANDLE (1400) and drops mouse
+         * button events. Treat any nonzero error as a failure so the broker
+         * (relay focus repair or the direct X11 route) still receives it. */
+        if (result != count || error != ERROR_SUCCESS) {
             broker_started_ms = GetTickCount64();
             result = send_through_broker(count, inputs, size, &error);
             broker_ms = (DWORD)(GetTickCount64() - broker_started_ms);
