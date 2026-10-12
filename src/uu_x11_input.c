@@ -879,6 +879,42 @@ static int normalized_coordinate(int32_t value, int extent)
     return (int)((clamped * (extent - 1) + 32767) / 65535);
 }
 
+/* deepin-port: the VNC desktop relay can be clipped to a single monitor
+ * (x11vnc -clip WxH+X+Y). Absolute pointer coordinates then arrive normalized
+ * to the private canvas, which matches the clip, so they have to be mapped
+ * into the clip rectangle instead of the full root window. */
+typedef struct {
+    bool enabled;
+    int width;
+    int height;
+    int x;
+    int y;
+} x11_pointer_clip;
+
+static x11_pointer_clip pointer_clip;
+
+static bool parse_pointer_clip(const char *value, x11_pointer_clip *clip)
+{
+    char trailing = '\0';
+    long height;
+    long width;
+    long x;
+    long y;
+
+    if (sscanf(value, "%ldx%ld+%ld+%ld%c", &width, &height, &x, &y,
+               &trailing) != 4)
+        return false;
+    if (width < 1 || width > 16384 || height < 1 || height > 16384 ||
+        x < 0 || x > 65535 || y < 0 || y > 65535)
+        return false;
+    clip->enabled = true;
+    clip->width = (int)width;
+    clip->height = (int)height;
+    clip->x = (int)x;
+    clip->y = (int)y;
+    return true;
+}
+
 static bool fake_button(const x11_api *api, Display *display,
                         unsigned int button, bool press,
                         bool pressed_buttons[10])
@@ -925,14 +961,25 @@ static bool inject_mouse_event(const x11_api *api, Display *display,
 
     if ((flags & UURB_MOUSEEVENTF_MOVE) != 0) {
         if ((flags & UURB_MOUSEEVENTF_ABSOLUTE) != 0) {
+            int motion_x;
+            int motion_y;
             int screen = api->default_screen(display);
             int width = api->display_width(display, screen);
             int height = api->display_height(display, screen);
 
-            if (!api->fake_motion_event(
-                    display, screen,
-                    normalized_coordinate(event->x, width),
-                    normalized_coordinate(event->y, height), 0))
+            if (pointer_clip.enabled) {
+                motion_x = pointer_clip.x +
+                           normalized_coordinate(event->x,
+                                                 pointer_clip.width);
+                motion_y = pointer_clip.y +
+                           normalized_coordinate(event->y,
+                                                 pointer_clip.height);
+            } else {
+                motion_x = normalized_coordinate(event->x, width);
+                motion_y = normalized_coordinate(event->y, height);
+            }
+            if (!api->fake_motion_event(display, screen, motion_x, motion_y,
+                                        0))
                 return false;
         } else if (!api->fake_relative_motion_event(
                        display, event->x, event->y, 0)) {
@@ -1290,7 +1337,7 @@ static void usage(const char *program)
 {
     fprintf(stderr,
             "usage: UURB_X11_INPUT_TOKEN=HEX64 %s --ready-file PATH "
-            "[--min-hold-ms 0..50] "
+            "[--min-hold-ms 0..50] [--clip WxH+X+Y] "
             "[--inject-display DISPLAY --inject-xauthority PATH]\n",
             program);
 }
@@ -1359,6 +1406,12 @@ int main(int argc, char **argv)
         } else if (strcmp(argv[index], "--inject-xauthority") == 0 &&
                    index + 1 < argc) {
             injection_xauthority = argv[++index];
+        } else if (strcmp(argv[index], "--clip") == 0 &&
+                   index + 1 < argc) {
+            if (!parse_pointer_clip(argv[++index], &pointer_clip)) {
+                usage(argv[0]);
+                return EXIT_FAILURE;
+            }
         } else {
             usage(argv[0]);
             return EXIT_FAILURE;
