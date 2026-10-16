@@ -12,6 +12,10 @@ rdp_port="${UURB_RDP_PORT:-3390}"
 resolution="${UURB_RESOLUTION:-1920x1080}"
 follow_desktop_resolution="${UURB_FOLLOW_DESKTOP_RESOLUTION:-off}"
 relay_clip="${UURB_RELAY_CLIP:-off}"
+# deepin-port: encoding used for the x11vnc -> vncviewer hop on the loopback.
+# raw   - skip the JPEG encode/decode pair entirely (default; fastest on loopback)
+# tight - upstream default, Tight + JPEG quality 8
+vnc_encoding="${UURB_VNC_ENCODING:-raw}"
 grd_fd_restart_threshold="${UURB_GRD_FD_RESTART_THRESHOLD:-4096}"
 text_key_delay_ms="${UURB_TEXT_KEY_DELAY_MS:-8}"
 physical_key_delay_ms="${UURB_PHYSICAL_KEY_DELAY_MS:-0}"
@@ -68,8 +72,9 @@ if [[ "$desktop_target" != auto &&
       "$uu_audio_setting" != off ]] ||
    [[ "$cursor_size_setting" != auto &&
       ! "$cursor_size_setting" =~ ^[0-9]{1,3}$ ]] ||
+   [[ "$vnc_encoding" != raw && "$vnc_encoding" != tight ]] ||
    [[ "$wine_prefix" != /* ]]; then
-    printf 'Invalid UURB desktop target, relay, VNC keyboard grab, display, RDP port, resolution, resolution-follow, desktop relay clip, descriptor, keyboard, network, cursor, audio, or prefix setting.\n' >&2
+    printf 'Invalid UURB desktop target, relay, VNC keyboard grab, display, RDP port, resolution, resolution-follow, desktop relay clip, VNC encoding, descriptor, keyboard, network, cursor, audio, or prefix setting.\n' >&2
     exit 2
 fi
 vnc_grab_keyboard_value=0
@@ -1535,6 +1540,18 @@ else
     desktop_vnc_display=$((desktop_vnc_port - 5900))
     # deepin-port: Deepin ships TigerVNC 1.15, which rejects the RealVNC
     # parameter set upstream relies on. Pass only the supported subset.
+    vnc_encoding_args=()
+    if [[ "$vnc_encoding" == raw ]]; then
+        # deepin-port: this hop is a loopback relay, not a WAN link. Dropping the
+        # Tight/JPEG encode+decode pair removes a full-frame lossy round trip from
+        # every frame; the extra bytes are far cheaper than the JPEG CPU on 1920x1200.
+        vnc_encoding_args=(
+            -AutoSelect=0
+            -PreferredEncoding=Raw
+            -FullColor=1
+            -CompressLevel=0
+        )
+    fi
     /usr/bin/env \
         DBUS_SESSION_BUS_ADDRESS=unix:path=/dev/null \
         /usr/bin/vncviewer \
@@ -1542,6 +1559,7 @@ else
         -Shared=1 \
         -SendPrimary=0 \
         -MenuKey=f8 \
+        "${vnc_encoding_args[@]}" \
         "127.0.0.1:$desktop_vnc_display" \
         >>"$state_dir/vncviewer-relay.log" 2>&1 &
     vncviewer_pid=$!
